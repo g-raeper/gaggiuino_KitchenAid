@@ -36,7 +36,7 @@
   #define dimmerPin 9
   #define valvePin 3
   #define brewPin A0 // PD7
-  #define pressurePin A1
+  #define pressurePin A2
   #define HX711_dout_1 12 //mcu > HX711 no 1 dout pin
   #define HX711_dout_2 13 //mcu > HX711 no 2 dout pin
   #define HX711_sck_1 10 //mcu > HX711 no 1 sck pin
