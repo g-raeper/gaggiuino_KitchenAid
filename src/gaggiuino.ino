@@ -412,7 +412,7 @@ void setPressure(float targetValue) {
     pumpValue = 0;
   } else {
     float diff = targetValue - livePressure;
-    pumpValue = PUMP_RANGE / (1.f + exp(1.7f - diff/0.9f));
+    pumpValue = PUMP_RANGE / (1.f + exp(1.7f - diff/0.5f)); // KitchenAid
   }
 
   pump.set(pumpValue);
@@ -505,94 +505,27 @@ void modeSelect() {
 //#########################____NO_OPTIONS_ENABLED_POWER_CONTROL____############################
 //#############################################################################################
 
-//delta stuff
-inline static float TEMP_DELTA(float d) { return (d*DELTA_RANGE); }
-
 void justDoCoffee() {
   // USART_CH1.println("DO_COFFEE ENTER");
-  int HPWR_LOW = HPWR/MainCycleDivider;
   static double heaterWave;
   static bool heaterState;
-  float BREW_TEMP_DELTA;
-  // Calculating the boiler heating power range based on the below input values
-  int HPWR_OUT = mapRange(kProbeReadValue, setPoint - 10, setPoint, HPWR, HPWR_LOW, 0);
-  HPWR_OUT = constrain(HPWR_OUT, HPWR_LOW, HPWR);  // limits range of sensor values to HPWR_LOW and HPWR
-  BREW_TEMP_DELTA = mapRange(kProbeReadValue, setPoint, setPoint + TEMP_DELTA(setPoint), TEMP_DELTA(setPoint), 0, 0);
-  BREW_TEMP_DELTA = constrain(BREW_TEMP_DELTA, 0, TEMP_DELTA(setPoint));
+  float tempDelta = float(setPoint) - kProbeReadValue; 
+  //float tempDeltaExp = exp(1.106882f - sqrt (sqrtf(tempDelta) / 4.472136f)-1; //KitchenAid
+  float tempDeltaExp = exp(1.122995f - pow(max(0,tempDelta)/18.86296f,0.25))-0.5f; //KitchenAid
+
 
   // USART_CH1.println("DO_COFFEE TEMP CTRL BEGIN");
-  if (brewActive) {
-  // Applying the HPWR_OUT variable as part of the relay switching logic
-    if (kProbeReadValue > setPoint-1.5f && kProbeReadValue < setPoint+0.25f && !preinfusionFinished ) {
-      if (millis() - heaterWave > HPWR_OUT*BrewCycleDivider && !heaterState ) {
-        setBoiler(LOW);
-        heaterState=true;
-        heaterWave=millis();
-      } else if (millis() - heaterWave > HPWR_LOW*MainCycleDivider && heaterState ) {
-        setBoiler(HIGH);
-        heaterState=false;
-        heaterWave=millis();
-      }
-    } else if (kProbeReadValue > setPoint-1.5f && kProbeReadValue < setPoint+(brewDeltaActive ? BREW_TEMP_DELTA : 0.f) && preinfusionFinished ) {
-      if (millis() - heaterWave > HPWR*BrewCycleDivider && !heaterState ) {
-        setBoiler(HIGH);
-        heaterState=true;
-        heaterWave=millis();
-      } else if (millis() - heaterWave > HPWR && heaterState ) {
-        setBoiler(LOW);
-        heaterState=false;
-        heaterWave=millis();
-      }
-    } else if (brewDeltaActive && kProbeReadValue >= (setPoint+BREW_TEMP_DELTA) && kProbeReadValue <= (setPoint+BREW_TEMP_DELTA+2.5f)  && preinfusionFinished ) {
-      if (millis() - heaterWave > HPWR*MainCycleDivider && !heaterState ) {
-        setBoiler(HIGH);
-        heaterState=true;
-        heaterWave=millis();
-      } else if (millis() - heaterWave > HPWR && heaterState ) {
-        setBoiler(LOW);
-        heaterState=false;
-        heaterWave=millis();
-      }
-    } else if(kProbeReadValue <= setPoint-1.5f) {
-    setBoiler(HIGH);
-    } else {
-      setBoiler(LOW);
+//  if (tempDelta >=0 || (float(setPoint) - kProbeReadValue >=-2.5 && brewactive && !preinfusionFinished))  {  //KitchenAid
+  if (tempDelta >=0 || (tempDelta >=-2.5 && !preinfusionFinished))  {  //KitchenAid
+    if (millis() - heaterWave > HPWR * ( !heaterState + (2 * heaterState -1) * (1 / (tempDeltaExp * float(MainCycleDivider * !brewActive+ BrewCycleDivider * brewActive * ((preinfusionFinished -1) * 0.7 +1.f)))))) {  //KitchenAid
+      setBoiler((tempDelta>30)||!heaterState); //KitchenAid
+      heaterState=((tempDelta>30)||!heaterState); //KitchenAid
+      heaterWave = millis(); //KitchenAid
+      myNex.writeNum("debug1",preinfusionFinished);
+      myNex.writeNum("debug2",(1 / (tempDeltaExp * float(MainCycleDivider * !brewActive+ BrewCycleDivider * brewActive * ((preinfusionFinished -1) * 0.7 +1.f))))*100);
     }
-  } else { //if brewState == 0
-    // USART_CH1.println("DO_COFFEE BREW BTN NOT ACTIVE BLOCK");
-    //brewTimer(0);
-    if (kProbeReadValue < ((float)setPoint - 10.00f)) {
-      setBoiler(HIGH);
-    } else if (kProbeReadValue >= ((float)setPoint - 10.00f) && kProbeReadValue < ((float)setPoint - 3.00f)) {
-      setBoiler(HIGH);
-      if (millis() - heaterWave > HPWR_OUT/BrewCycleDivider) {
-        setBoiler(LOW);
-        heaterState=false;
-        heaterWave=millis();
-      }
-    } else if ((kProbeReadValue >= ((float)setPoint - 3.00f)) && (kProbeReadValue <= ((float)setPoint - 1.00f))) {
-      if (millis() - heaterWave > HPWR_OUT/BrewCycleDivider && !heaterState) {
-        setBoiler(HIGH);
-        heaterState=true;
-        heaterWave=millis();
-      } else if (millis() - heaterWave > HPWR_OUT/BrewCycleDivider && heaterState ) {
-        setBoiler(LOW);
-        heaterState=false;
-        heaterWave=millis();
-      }
-    } else if ((kProbeReadValue >= ((float)setPoint - 0.5f)) && kProbeReadValue < (float)setPoint) {
-      if (millis() - heaterWave > HPWR_OUT/BrewCycleDivider && !heaterState ) {
-        setBoiler(HIGH);
-        heaterState=true;
-        heaterWave=millis();
-      } else if (millis() - heaterWave > HPWR_OUT/BrewCycleDivider && heaterState ) {
-        setBoiler(LOW);
-        heaterState=false;
-        heaterWave=millis();
-      }
-    } else {
+  } else {
       setBoiler(LOW);
-    }
   }
 }
 
@@ -600,22 +533,23 @@ void justDoCoffee() {
 //################################____STEAM_POWER_CONTROL____##################################
 //#############################################################################################
 
-void steamCtrl() {
+void steamCtrl() { 
+  justDoCoffee(); //KitchenAid
 
-  if (!brewActive) {
-    if (livePressure <= 9.f) { // steam temp control, needs to be aggressive to keep steam pressure acceptable
-      if ((kProbeReadValue > setPoint-10.f) && (kProbeReadValue <= 155.f)) setBoiler(HIGH);
-      else setBoiler(LOW);
-    } else if(livePressure >= 9.1f) setBoiler(LOW);
-  } else if (brewActive) { //added to cater for hot water from steam wand functionality
-    if ((kProbeReadValue > setPoint-10.f) && (kProbeReadValue <= 105.f)) {
-      setBoiler(HIGH);
-      setPressure(9);
-    } else {
-      setBoiler(LOW);
-      setPressure(9);
-    }
-  } else setBoiler(LOW);
+//  if (!brewActive) {
+//    if (livePressure <= 9.f) { // steam temp control, needs to be aggressive to keep steam pressure acceptable
+//      if ((kProbeReadValue > setPoint-10.f) && (kProbeReadValue <= 155.f)) setBoiler(HIGH);
+//      else setBoiler(LOW);
+//    } else if(livePressure >= 9.1f) setBoiler(LOW);
+//  } else if (brewActive) { //added to cater for hot water from steam wand functionality
+//    if ((kProbeReadValue > setPoint-10.f) && (kProbeReadValue <= 105.f)) {
+//      setBoiler(HIGH);
+//      setPressure(9);
+//    } else {
+//      setBoiler(LOW);
+//      setPressure(9);
+//    }
+//  } else setBoiler(LOW);
 }
 
 //#############################################################################################
@@ -833,7 +767,8 @@ bool brewState() {
 
 //Function to get the state of the steam switch button
 bool steamState() {
-  return digitalRead(steamPin) == LOW; // pin will be low when switch is ON.
+  return(false); //KitchenAid
+//  return digitalRead(steamPin) == LOW; // pin will be low when switch is ON.
 }
 
 void brewTimer(bool start) { // small function for easier brew timer start/stop
@@ -886,6 +821,7 @@ void deScale() {
     if (currentCycleRead < lastCycleRead) { // descale in cycles for 5 times then wait according to the below condition
       if (blink == true) { // Logic that switches between modes depending on the $blink value
         pump.set(10);
+        digitalWrite(valvePin, HIGH); //KitchenAid
         if (millis() - timer > DESCALE_PHASE1_EVERY) { // 60 sec
           blink = false;
           currentCycleRead += 2;
@@ -901,6 +837,7 @@ void deScale() {
       }
     } else {
       pump.set(30);
+      digitalWrite(valvePin, HIGH); //KitchenAid
       if ((millis() - timer) > DESCALE_PHASE3_EVERY) { //set dimmer power to max descale value for 4 sec
         solenoidBeat();
         blink = true;
@@ -923,6 +860,7 @@ void deScale() {
     }
   } else if (brewActive && descaleFinished) {
     pump.set(0);
+    digitalWrite(valvePin, LOW); //KitchenAid
     if ((millis() - timer) > 1000) {
       brewTimer(0);
       myNex.writeStr("t14.txt", "FINISHED!");
@@ -1062,7 +1000,7 @@ void brewDetect() {
     /* UPDATE VARIOUS INTRASHOT TIMERS and VARS */
     brewingTimer = millis();
     /* Only resetting the brew activity value if it's been previously set */
-    preinfusionFinished = false;
+    preinfusionFinished = true; //KitchenAid
     if (myNex.currentPageId == 1 || myNex.currentPageId == 2 || myNex.currentPageId == 8 || homeScreenScalesEnabled ) {
       /* Only setting the weight activity value if it's been previously unset */
       weighingStartRequested=true;
